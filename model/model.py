@@ -1,7 +1,10 @@
 import torch.nn as nn
 import torch.nn.functional as F
-from base import BaseModel
+import torchvision.models as models
+from torchvision.models.detection import fasterrcnn_resnet50_fpn
+from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 
+from base import BaseModel
 
 class MnistModel(BaseModel):
     def __init__(self, num_classes=10):
@@ -78,3 +81,95 @@ class VGGModel(BaseModel):
             elif isinstance(m, nn.Linear):
                 nn.init.normal_(m.weight, 0, 0.01)
                 nn.init.constant_(m.bias, 0)
+
+class YOLOv3(BaseModel):
+    def __init__(self, num_classes=80, img_size=416):
+        super().__init__()
+        self.num_classes = num_classes
+        self.img_size = img_size
+        
+        # Darknet-53 backbone (simplified)
+        self.backbone = self._create_backbone()
+        
+        # Detection heads for 3 different scales
+        self.head_1 = self._create_detection_head(1024, num_classes)
+        self.head_2 = self._create_detection_head(512, num_classes)
+        self.head_3 = self._create_detection_head(256, num_classes)
+        
+    def _create_backbone(self):
+        # Simplified backbone using ResNet
+        resnet = models.resnet50(pretrained=True)
+        layers = list(resnet.children())[:-2]  # Remove avgpool and fc
+        return nn.Sequential(*layers)
+    
+    def _create_detection_head(self, in_channels, num_classes):
+        # Each grid cell predicts 3 bounding boxes
+        # Each box: [x, y, w, h, conf, class_probs...]
+        anchors_per_cell = 3
+        output_size = anchors_per_cell * (5 + num_classes)
+        
+        return nn.Sequential(
+            nn.Conv2d(in_channels, in_channels // 2, 3, padding=1),
+            nn.BatchNorm2d(in_channels // 2),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(in_channels // 2, output_size, 1)
+        )
+    
+    def forward(self, x):
+        # Extract features
+        features = self.backbone(x)
+        
+        # Apply detection heads (simplified - normally you'd have FPN)
+        detection_1 = self.head_1(features)
+        
+        return {
+            'predictions': detection_1,
+            'features': features
+        }
+
+
+class FasterRCNN(BaseModel):
+    def __init__(self, num_classes=91, pretrained=True):
+        super().__init__()
+        # Load pre-trained Faster R-CNN
+        self.model = fasterrcnn_resnet50_fpn(pretrained=pretrained)
+        
+        # Replace the classifier head for custom number of classes
+        in_features = self.model.roi_heads.box_predictor.cls_score.in_features
+        self.model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
+    
+    def forward(self, images, targets=None):
+        if self.training:
+            return self.model(images, targets)
+        else:
+            return self.model(images)
+
+
+class SimpleObjectDetector(BaseModel):
+    """Simplified single-shot detector for learning purposes"""
+    def __init__(self, num_classes=20, backbone='resnet50'):
+        super().__init__()
+        self.num_classes = num_classes
+        
+        # Backbone
+        if backbone == 'resnet50':
+            resnet = models.resnet50(pretrained=True)
+            self.backbone = nn.Sequential(*list(resnet.children())[:-2])
+            backbone_out = 2048
+        else:
+            raise ValueError(f"Unsupported backbone: {backbone}")
+        
+        # Detection head
+        # Predicts: [x, y, w, h, objectness, class_probs...]
+        self.detection_head = nn.Sequential(
+            nn.Conv2d(backbone_out, 512, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(512, 256, 3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(256, 5 + num_classes, 1)  # 4 box coords + 1 objectness + classes
+        )
+        
+    def forward(self, x):
+        features = self.backbone(x)
+        detections = self.detection_head(features)
+        return detections

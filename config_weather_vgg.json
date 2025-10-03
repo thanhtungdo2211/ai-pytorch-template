@@ -12,7 +12,7 @@
     "data_loader": {
         "type": "CustomImageDataLoader",
         "args":{
-            "data_dir": "/home/mq/disk2T/tungdt/ai-pt-rs/dataset",
+            "data_dir": "../dataset",
             "batch_size": 16,
             "shuffle": true,
             "validation_split": 0.2,
