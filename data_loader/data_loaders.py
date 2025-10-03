@@ -46,6 +46,41 @@ class Cifar10DataLoader(BaseDataLoader):
             transform=transform
         )
         super().__init__(self.dataset, batch_size, shuffle, validation_split, num_workers)
+
+class CustomImageDataLoader(BaseDataLoader):
+    def __init__(self, data_dir, batch_size, shuffle=True, validation_split=0.0, num_workers=1, training=True, image_size=224):
+
+        normalize = transforms.Normalize(
+            mean=[0.485, 0.456, 0.406],  # ImageNet means
+            std=[0.229, 0.224, 0.225]   # ImageNet stds
+        )
+
+        if training:
+                # Data augmentation for training
+                transform = transforms.Compose([
+                    transforms.RandomResizedCrop(image_size),
+                    transforms.RandomHorizontalFlip(p=0.5),
+                    transforms.RandomRotation(degrees=10),
+                    transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
+                    transforms.ToTensor(),
+                    normalize,
+                ])
+                
+        else:
+                # No augmentation for validation/test
+                transform = transforms.Compose([
+                    transforms.Resize(int(image_size * 1.14)),  # Resize to slightly larger
+                    transforms.CenterCrop(image_size),
+                    transforms.ToTensor(),
+                    normalize,
+                ])
+        
+        self.data_dir = data_dir
+        self.dataset = datasets.ImageFolder(
+            root=self.data_dir,
+            transform=transform
+        )
+        super().__init__(self.dataset, batch_size, shuffle, validation_split, num_workers)
         
 class DummyDataLoader(BaseDataLoader):
     def __init__(self, data_dir, batch_size, shuffle=True, validation_split=0.0, num_workers=1, training=True):
