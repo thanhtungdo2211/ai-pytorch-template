@@ -117,6 +117,136 @@ class COCODetectionDataLoader(BaseDataLoader):
         super().__init__(self.dataset, batch_size, shuffle, validation_split, num_workers, collate_fn=detection_collate_fn)
 
 
+class YOLODataset(Dataset):
+    """
+    Dataset for YOLO format annotations (.txt files).
+    Each label file should contain lines with: <class> <x_center> <y_center> <width> <height>
+    where coordinates are normalized (0..1) relative to image width/height.
+    """
+    def __init__(self, data_dir, transform=None, training=True, images_subdir='images', labels_subdir='labels'):
+        self.data_dir = data_dir
+        self.transform = transform
+        self.training = training
+
+        self.images = []
+        self.labels = []
+
+        images_dir = os.path.join(self.data_dir, images_subdir)
+        labels_dir = os.path.join(self.data_dir, labels_subdir)
+
+        # If images folder doesn't exist, try root
+        if not os.path.exists(images_dir):
+            images_dir = self.data_dir
+
+        for img_file in os.listdir(images_dir):
+            if img_file.lower().endswith(('.jpg', '.jpeg', '.png')):
+                img_path = os.path.join(images_dir, img_file)
+                self.images.append(img_path)
+
+                # corresponding label path
+                label_name = os.path.splitext(img_file)[0] + '.txt'
+                label_path = os.path.join(labels_dir, label_name)
+
+                # if labels dir doesn't exist or file not found, check same dir as image
+                if not os.path.exists(label_path):
+                    candidate = os.path.join(images_dir, label_name)
+                    label_path = candidate if os.path.exists(candidate) else None
+
+                self.labels.append(label_path)
+
+    def __len__(self):
+        return len(self.images)
+
+    def __getitem__(self, idx):
+        img_path = self.images[idx]
+        label_path = self.labels[idx]
+
+        image = Image.open(img_path).convert('RGB')
+        w, h = image.size
+
+        boxes = []
+        labels = []
+
+        if label_path and os.path.exists(label_path):
+            with open(label_path, 'r') as f:
+                for line in f:
+                    parts = line.strip().split()
+                    if len(parts) < 5:
+                        continue
+                    try:
+                        cls = int(parts[0])
+                        x_c = float(parts[1]) * w
+                        y_c = float(parts[2]) * h
+                        bw = float(parts[3]) * w
+                        bh = float(parts[4]) * h
+
+                        xmin = x_c - bw / 2.0
+                        ymin = y_c - bh / 2.0
+                        xmax = x_c + bw / 2.0
+                        ymax = y_c + bh / 2.0
+
+                        # clip to image
+                        xmin = max(0.0, xmin)
+                        ymin = max(0.0, ymin)
+                        xmax = min(w, xmax)
+                        ymax = min(h, ymax)
+
+                        boxes.append([xmin, ymin, xmax, ymax])
+                        labels.append(cls)
+                    except ValueError:
+                        # skip malformed lines
+                        continue
+
+        if len(boxes) == 0:
+            target = {
+                'boxes': torch.zeros((0, 4), dtype=torch.float32),
+                'labels': torch.zeros((0,), dtype=torch.int64)
+            }
+        else:
+            target = {
+                'boxes': torch.tensor(boxes, dtype=torch.float32),
+                'labels': torch.tensor(labels, dtype=torch.int64)
+            }
+
+        if self.transform:
+            image = self.transform(image)
+
+        return image, target
+
+
+class YOLODetectionDataLoader(BaseDataLoader):
+    """
+    DataLoader wrapper for YOLO-format datasets.
+    Expects dataset structure like:
+      data_dir/
+        images/
+          xxx.jpg
+        labels/
+          xxx.txt
+    """
+    def __init__(self, data_dir, batch_size, shuffle=True, validation_split=0.0,
+                 num_workers=1, training=True, image_size=416):
+
+        self.image_size = image_size
+
+        if training:
+            transform = transforms.Compose([
+                transforms.Resize((image_size, image_size)),
+                transforms.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.05),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            ])
+        else:
+            transform = transforms.Compose([
+                transforms.Resize((image_size, image_size)),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            ])
+
+        self.dataset = YOLODataset(data_dir, transform=transform, training=training)
+        super().__init__(self.dataset, batch_size, shuffle, validation_split, num_workers, collate_fn=detection_collate_fn)
+
+
 class VOCDetectionDataLoader(BaseDataLoader):
     """
     Pascal VOC detection data loader
