@@ -12,7 +12,7 @@
     "data_loader": {
         "type": "Cifar10DataLoader",
         "args":{
-            "data_dir": "/home/mq/disk2T/tungdt/ai-pt-rs/cifar10",
+            "data_dir": "../dataset/cifar10",
             "batch_size": 128,
             "shuffle": true,
             "validation_split": 0.1,

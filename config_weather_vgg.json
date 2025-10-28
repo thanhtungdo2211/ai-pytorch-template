@@ -12,7 +12,7 @@
     "data_loader": {
         "type": "CustomImageDataLoader",
         "args":{
-            "data_dir": "../dataset",
+            "data_dir": "../dataset/dataset",
             "batch_size": 16,
             "shuffle": true,
             "validation_split": 0.2,
@@ -40,8 +40,8 @@
         }
     },
     "trainer": {
-        "epochs": 2,
-
+        "epochs": 10,
+        "type": "Trainer",
         "save_dir": "saved/",
         "save_period": 5,
         "verbosity": 2,

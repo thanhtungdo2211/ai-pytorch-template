@@ -6,8 +6,8 @@ import data_loader.data_loaders as module_data
 import model.loss as module_loss
 import model.metric as module_metric
 import model.model as module_arch
+import trainer.trainer as module_trainer  # Import trainer module
 from parse_config import ConfigParser
-from trainer import Trainer
 from utils import prepare_device
 
 
@@ -44,12 +44,16 @@ def main(config):
     optimizer = config.init_obj('optimizer', torch.optim, trainable_params)
     lr_scheduler = config.init_obj('lr_scheduler', torch.optim.lr_scheduler, optimizer)
 
-    trainer = Trainer(model, criterion, metrics, optimizer,
-                      config=config,
-                      device=device,
-                      data_loader=data_loader,
-                      valid_data_loader=valid_data_loader,
-                      lr_scheduler=lr_scheduler)
+    # Dynamically select trainer based on config
+    trainer_class = getattr(module_trainer, config['trainer']['type'])
+    trainer = trainer_class(
+        model, criterion, metrics, optimizer,
+        config=config,
+        device=device,
+        data_loader=data_loader,
+        valid_data_loader=valid_data_loader,
+        lr_scheduler=lr_scheduler
+    )
 
     trainer.train()
 

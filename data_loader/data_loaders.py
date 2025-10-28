@@ -1,13 +1,12 @@
-from torchvision import datasets, transforms
-from base import BaseDataLoader
+import os
+import json
+
 import torch
 from torch.utils.data import Dataset
 from torchvision import transforms, datasets
-from base import BaseDataLoader
-import os
 from PIL import Image
-import json
-import xml.etree.ElementTree as ET
+
+from base import BaseDataLoader
 
 class MnistDataLoader(BaseDataLoader):
     """
@@ -265,7 +264,7 @@ class VOCDetectionDataLoader(BaseDataLoader):
             root=data_dir,
             year='2012',
             image_set='train' if training else 'val',
-            download=True,
+            download=False,
             transform=transform,
             target_transform=self._parse_voc_target
         )

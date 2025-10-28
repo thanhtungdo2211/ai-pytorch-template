@@ -10,9 +10,9 @@
         }
     },
     "data_loader": {
-        "type": "VOCDetectionDataLoader",
+        "type": "YOLODetectionDataLoader",
         "args":{
-            "data_dir": "../dataset/VOC",
+            "data_dir": "../dataset/1",
             "batch_size": 4,
             "shuffle": true,
             "validation_split": 0.1,
