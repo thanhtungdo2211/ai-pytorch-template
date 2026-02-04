@@ -1,6 +1,8 @@
 import torch
 import os
 import sys
+import mlflow
+import mlflow.pytorch
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from examples.object_detection.engine import train_one_epoch, evaluate
@@ -14,6 +16,32 @@ from torchvision.transforms import v2 as T
 import torchvision
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 from torchvision.models.detection.mask_rcnn import MaskRCNNPredictor
+
+def _log_coco_metrics(coco_evaluator, epoch):
+    # COCOeval.stats order:
+    # [AP, AP50, AP75, APs, APm, APl, AR@1, AR@10, AR@100, ARs, ARm, ARl]
+    stat_names = [
+        "AP",
+        "AP50",
+        "AP75",
+        "APs",
+        "APm",
+        "APl",
+        "AR@1",
+        "AR@10",
+        "AR@100",
+        "ARs",
+        "ARm",
+        "ARl",
+    ]
+    for iou_type, coco_eval in coco_evaluator.coco_eval.items():
+        if coco_eval.stats is None or len(coco_eval.stats) == 0:
+            continue
+        metrics = {
+            f"{iou_type}/{name}": float(value)
+            for name, value in zip(stat_names, coco_eval.stats)
+        }
+        mlflow.log_metrics(metrics, step=epoch)
 
 class PennFudanDataset(torch.utils.data.Dataset):
     def __init__(self, root, transforms):
@@ -99,13 +127,8 @@ def get_model_instance_segmentation(num_classes):
 
     return model
 
-# train on GPU (cuda), Apple MPS, or CPU if none are available
-if torch.cuda.is_available():
-    device = torch.device("cuda")
-elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-    device = torch.device("mps")
-else:
-    device = torch.device("cpu")
+# train on the accelerator or on the CPU, if an accelerator is not available
+device = torch.accelerator.current_accelerator() if torch.accelerator.is_available() else torch.device('cpu')
 # our dataset has two classes only - background and person
 num_classes = 2
 # use our dataset and defined transformations
@@ -155,17 +178,49 @@ lr_scheduler = torch.optim.lr_scheduler.StepLR(
 )
 
 # let's train it just for 2 epochs
-num_epochs = 10
+num_epochs = 1
 
-for epoch in range(num_epochs):
-    # train for one epoch, printing every 10 iterations
-    train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq=10)
-    # update the learning rate
-    lr_scheduler.step()
-    # evaluate on the test dataset
-    evaluate(model, data_loader_test, device=device)
+tracking_uri = os.getenv("MLFLOW_TRACKING_URI")
+if tracking_uri:
+    mlflow.set_tracking_uri(tracking_uri)
+mlflow.set_experiment(os.getenv("MLFLOW_EXPERIMENT_NAME", "object_detection"))
 
-# Save the model
-torch.save(model.state_dict(), "model.pth")
-print("Model saved to model.pth")
+with mlflow.start_run(run_name=os.getenv("MLFLOW_RUN_NAME")):
+    mlflow.log_params(
+        {
+            "num_classes": num_classes,
+            "batch_size": data_loader.batch_size,
+            "lr": optimizer.param_groups[0]["lr"],
+            "momentum": optimizer.param_groups[0].get("momentum"),
+            "weight_decay": optimizer.param_groups[0].get("weight_decay"),
+            "step_size": lr_scheduler.step_size,
+            "gamma": lr_scheduler.gamma,
+            "num_epochs": num_epochs,
+            "model": "maskrcnn_resnet50_fpn",
+        }
+    )
 
+    for epoch in range(num_epochs):
+        # train for one epoch, printing every 10 iterations
+        metric_logger = train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq=10)
+        # update the learning rate
+        lr_scheduler.step()
+        # evaluate on the test dataset
+        coco_evaluator = evaluate(model, data_loader_test, device=device)
+
+        # log averaged training losses + lr
+        train_metrics = {
+            f"train/{name}": meter.global_avg
+            for name, meter in metric_logger.meters.items()
+        }
+        mlflow.log_metrics(train_metrics, step=epoch)
+
+        # log COCO evaluation metrics
+        _log_coco_metrics(coco_evaluator, epoch)
+
+    # Save the model
+    torch.save(model.state_dict(), "model.pth")
+    mlflow.log_artifact("model.pth")
+    print("Model saved to model.pth")
+
+    print("That's it!")

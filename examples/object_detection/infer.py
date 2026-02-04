@@ -51,19 +51,20 @@ def main():
     model = get_model_instance_segmentation(num_classes)
     
     # 3. Load Trained Weights
-    model_path = "model.pth"
+    model_path = "data/models/model.pth"
     if not os.path.exists(model_path):
         print(f"Error: Model file '{model_path}' not found. Please train the model first.")
         return
 
     print(f"Loading model from {model_path}...")
     model.load_state_dict(torch.load(model_path, map_location=device))
+    print(model)
     model.to(device)
     model.eval()
     print("Model loaded successfully!")
 
     # 4. Load and Preprocess Image
-    image_path = "data/PennFudanPed/PNGImages/FudanPed00046.png"
+    image_path = "data/PennFudanPed/PNGImages/PennPed00091.png"
     if not os.path.exists(image_path):
         print(f"Error: Image file '{image_path}' not found.")
         return
@@ -110,7 +111,7 @@ def main():
     plt.figure(figsize=(12, 12))
     plt.imshow(output_image.permute(1, 2, 0))
     plt.axis('off')
-    output_filename = "inference_result.png"
+    output_filename = "data/inference_result.png"
     plt.savefig(output_filename, bbox_inches='tight', pad_inches=0)
     print(f"Result saved to {output_filename}")
 
