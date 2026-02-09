@@ -160,6 +160,8 @@ if __name__ == "__main__":
     model = LSTMClassifier(vocab_size=dataset.vocab_size, embedding_dim=100, 
                           hidden_dim=128, output_dim=2, n_layers=2).to(device)
     
+    print(model)
+    exit()
     # Training
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     loss_fn = nn.CrossEntropyLoss()
